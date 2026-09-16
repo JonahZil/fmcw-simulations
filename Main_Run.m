@@ -17,63 +17,82 @@ if_gain = 700;
 
 adc_fs = 2e6;
 
-target_range = 0.6;
-target_rcs = 1;
+target_A_range = 0.6;
+target_A_rcs = 1;
+
+target_B_range = 2 * target_A_range;
+target_B_rcs = 0.01;
 
 lambda = c / ((f_start + f_stop) / 2);
 
 t = 0:dt:(t_chirp - dt);
 
-% Keep LO phase fixed
 lo_phase = 0;
 
-% Four transmitted start phases
+% phase states
 phase_set = [0, pi/2, pi, 3*pi/2];
 
-% Nonlinearity parameters
 a1 = 1;
 a2 = 0.2;
 
-% Generate fixed LO
 lo = Chirp_Gen(t, f_start, S, lo_phase);
 
-% ADC downsampling factor
 downsample_factor = round(1 / (dt * adc_fs));
-
-% Number of ADC samples
 num_adc_samples = ceil(length(t) / downsample_factor);
 
-% Store one ADC capture for each phase
 ADC_all = zeros(length(phase_set), num_adc_samples);
+ADC_B_only = zeros(length(phase_set), num_adc_samples);
 
 for k = 1:length(phase_set)
 
     tx_phase = phase_set(k);
-
-    % Transmitted chirp
-    tx = Chirp_Gen(t, f_start, S, tx_phase);
-
-    % Propagation
-    rx = channel_propagation_model( ...
+    
+    % a
+    rx_A = channel_propagation_model( ...
         t, c, lambda, antenna_gain, ...
-        f_start, S, tx_phase, target_range, target_rcs);
+        f_start, S, tx_phase, ...
+        target_A_range, target_A_rcs);
+    
+    % b
+    rx_B = channel_propagation_model( ...
+        t, c, lambda, antenna_gain, ...
+        f_start, S, tx_phase, ...
+        target_B_range, target_B_rcs);
 
-    % Mixer
+    % a + b
+    rx = rx_A + rx_B;
+
     mixed = mixer(lo, rx);
 
-    % IF amplifier + low-pass filter
-    if_linear = If_Amp_LowPass_Filter(dt, mixed, if_gain);
+    if_linear = If_Amp_LowPass_Filter( ...
+        dt, mixed, if_gain);
 
-    % Nonlinearity
-    if_signal = Nonlinearity(if_linear, a1, a2);
+    if_signal = Nonlinearity( ...
+        if_linear, a1, a2);
 
-    % ADC
     ADC = downsample(if_signal, downsample_factor);
     ADC = ADC - mean(ADC);
 
     ADC_all(k, :) = ADC;
 
+    % b only
+    mixed_B = mixer(lo, rx_B);
+
+    if_linear_B = If_Amp_LowPass_Filter( ...
+        dt, mixed_B, if_gain);
+
+    if_signal_B = Nonlinearity( ...
+        if_linear_B, a1, a2);
+
+    ADC_B = downsample( ...
+        if_signal_B, downsample_factor);
+
+    ADC_B = ADC_B - mean(ADC_B);
+
+    ADC_B_only(k, :) = ADC_B;
+
 end
 
-% Plot spectrum before and after phase cycling
-FFT_ADC(ADC_all, phase_set, adc_fs, c, S);
+FFT_ADC( ...
+    ADC_all, ADC_B_only, phase_set, ...
+    adc_fs, c, S);

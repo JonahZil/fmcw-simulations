@@ -1,4 +1,4 @@
-function FFT_ADC(ADC_all, phase_set, adc_fs, c, S)
+function FFT_ADC(ADC_all, ADC_B_only, phase_set, adc_fs, c, S)
 
     num_phases = size(ADC_all, 1);
     N = size(ADC_all, 2);
@@ -6,67 +6,55 @@ function FFT_ADC(ADC_all, phase_set, adc_fs, c, S)
     w = hann(N).';
     w = w / mean(w);
 
-    % Store complex FFT for every transmitted phase
     Y_all = zeros(num_phases, N);
+    Y_B = zeros(num_phases, N);
 
     for k = 1:num_phases
 
-        Y_all(k, :) = fft(ADC_all(k, :) .* w);
+        Y_all(k, :) = ...
+            fft(ADC_all(k, :) .* w);
+
+        Y_B(k, :) = ...
+            fft(ADC_B_only(k, :) .* w);
 
     end
-
-    % ========================================================
-    % Before cancellation
-    % ========================================================
-
-    % Use phase = 0 capture as the original spectrum
+    
+    % before demodulation
     Y_before = Y_all(1, :);
-
-    % ========================================================
-    % Digital phase demodulation
-    % ========================================================
-
+    
+    % after demodulation
     Y_after = zeros(1, N);
+
+    % b reference
+    Y_B_after = zeros(1, N);
 
     for k = 1:num_phases
 
         phi = phase_set(k);
 
-        % Fundamental rotates approximately as exp(-j*phi).
-        %
-        % Multiplying by exp(+j*phi) puts the
-        % fundamental from every capture back in phase.
-        %
-        % The second harmonic rotates as exp(-j*2*phi),
-        % so after correction it still rotates as
-        % exp(-j*phi).
+        correction = exp(1j * phi);
 
-        Y_demod = Y_all(k, :) * exp(1j * phi);
+        Y_after = Y_after ...
+            + Y_all(k, :) * correction;
 
-        Y_after = Y_after + Y_demod;
+        Y_B_after = Y_B_after ...
+            + Y_B(k, :) * correction;
 
     end
 
-    % Coherent average
     Y_after = Y_after / num_phases;
-
-    % ========================================================
-    % Positive frequencies
-    % ========================================================
-
+    Y_B_after = Y_B_after / num_phases;
+    
     num_positive = floor(N/2) + 1;
 
     Y_before = abs(Y_before(1:num_positive));
     Y_after = abs(Y_after(1:num_positive));
+    Y_B_after = abs(Y_B_after(1:num_positive));
 
     f = (0:num_positive-1) * adc_fs / N;
 
     range_axis = c * f / (2*S);
-
-    % ========================================================
-    % Plot
-    % ========================================================
-
+    
     figure;
 
     plot( ...
@@ -81,14 +69,21 @@ function FFT_ADC(ADC_all, phase_set, adc_fs, c, S)
         20*log10(Y_after(2:end) + eps), ...
         'LineWidth', 1.5);
 
+    plot( ...
+        range_axis(2:end), ...
+        20*log10(Y_B_after(2:end) + eps), ...
+        '--', ...
+        'LineWidth', 1.5);
+
     xlabel("Apparent Range (m)");
     ylabel("Magnitude (dB)");
 
     legend( ...
-        "Before phase cycling", ...
-        "After phase cycling");
+        "A + B before cancellation", ...
+        "A + B after cancellation", ...
+        "B-only reference");
 
-    title("Harmonic Cancellation Using Start-Phase Modulation");
+    title("Recovery of Real Target Beneath H2");
 
     grid on;
     xlim([0 2]);
