@@ -1,5 +1,6 @@
 clear;
 clc;
+rng(1);
 
 c = 299792458;
 
@@ -17,11 +18,8 @@ if_gain = 700;
 
 adc_fs = 2e6;
 
-target_A_range = 0.6;
-target_A_rcs = 1;
-
-target_B_range = 2 * target_A_range;
-target_B_rcs = 0.01;
+target_range = 1.2;
+target_rcs = 0.01;
 
 lambda = c / ((f_start + f_stop) / 2);
 
@@ -29,42 +27,37 @@ t = 0:dt:(t_chirp - dt);
 
 lo_phase = 0;
 
-% 16 equally spaced phase states
-num_phase_states = 16;
-phase_set = 2*pi*(0:num_phase_states-1) / num_phase_states;
+phase_set = 2*pi*(0:15)/16;
 
 a1 = 1;
 a2 = 0.2;
 
 dac_step = 0.00578;
 
+k_B = 1.380649e-23;
+temperature = 290;
+resistance = 50;
+noise_bw = 800e3;
+
+thermal_noise_rms = ...
+    if_gain * sqrt(k_B * temperature * resistance * noise_bw);
+
 lo = Chirp_Gen(t, f_start, S, lo_phase);
 
 downsample_factor = round(1 / (dt * adc_fs));
 num_adc_samples = ceil(length(t) / downsample_factor);
 
-ADC_all = zeros(length(phase_set), num_adc_samples);
-ADC_B_only = zeros(length(phase_set), num_adc_samples);
-ADC_B_ideal = zeros(length(phase_set), num_adc_samples);
+ADC_clean = zeros(length(phase_set), num_adc_samples);
+ADC_noisy = zeros(length(phase_set), num_adc_samples);
 
 for k = 1:length(phase_set)
 
     tx_phase = phase_set(k);
 
-    % Quantized DAC: A
-    rx_A = channel_propagation_model_DAC( ...
+    rx = channel_propagation_model_DAC( ...
         t, c, lambda, antenna_gain, ...
         f_start, S, tx_phase, ...
-        target_A_range, target_A_rcs, dac_step);
-
-    % Quantized DAC: B
-    rx_B = channel_propagation_model_DAC( ...
-        t, c, lambda, antenna_gain, ...
-        f_start, S, tx_phase, ...
-        target_B_range, target_B_rcs, dac_step);
-
-    % A + B
-    rx = rx_A + rx_B;
+        target_range, target_rcs, dac_step);
 
     mixed = mixer(lo, rx);
 
@@ -79,47 +72,18 @@ for k = 1:length(phase_set)
 
     ADC = ADC - mean(ADC);
 
-    ADC_all(k, :) = ADC;
+    ADC_clean(k, :) = ADC;
 
-    % B only, quantized DAC
-    mixed_B = mixer(lo, rx_B);
+    noise = Thermal_Noise( ...
+        length(ADC), adc_fs, ...
+        noise_bw, thermal_noise_rms);
 
-    if_linear_B = If_Amp_LowPass_Filter( ...
-        dt, mixed_B, if_gain);
-
-    if_signal_B = Nonlinearity( ...
-        if_linear_B, a1, a2);
-
-    ADC_B = downsample( ...
-        if_signal_B, downsample_factor);
-
-    ADC_B = ADC_B - mean(ADC_B);
-
-    ADC_B_only(k, :) = ADC_B;
-
-    % B only, ideal DAC
-    rx_B_ideal = channel_propagation_model_DAC( ...
-        t, c, lambda, antenna_gain, ...
-        f_start, S, tx_phase, ...
-        target_B_range, target_B_rcs, 0);
-
-    mixed_B_ideal = mixer(lo, rx_B_ideal);
-
-    if_linear_B_ideal = If_Amp_LowPass_Filter( ...
-        dt, mixed_B_ideal, if_gain);
-
-    if_signal_B_ideal = Nonlinearity( ...
-        if_linear_B_ideal, a1, a2);
-
-    ADC_B_id = downsample( ...
-        if_signal_B_ideal, downsample_factor);
-
-    ADC_B_id = ADC_B_id - mean(ADC_B_id);
-
-    ADC_B_ideal(k, :) = ADC_B_id;
+    ADC_noisy(k, :) = ADC + noise;
+    ADC_noisy(k, :) = ...
+        ADC_noisy(k, :) - mean(ADC_noisy(k, :));
 
 end
 
 FFT_ADC( ...
-    ADC_all, ADC_B_only, ADC_B_ideal, ...
+    ADC_clean, ADC_noisy, ...
     phase_set, adc_fs, c, S);
