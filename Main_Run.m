@@ -15,75 +15,88 @@ dt = 1e-12;
 
 antenna_gain = 3;
 if_gain = 700;
-
 adc_fs = 2e6;
 
-target_range = 1.2;
-target_rcs = 0.01;
+target_A_range = 0.6;
+target_A_rcs = 1;
+
+target_B_range = 1.2;
+target_B_rcs = 0.01;
 
 lambda = c / ((f_start + f_stop) / 2);
 
 t = 0:dt:(t_chirp - dt);
 
-lo_phase = 0;
-
 phase_set = 2*pi*(0:15)/16;
+
+phase_error_std_deg = 2;
+phase_error = deg2rad(phase_error_std_deg) * randn(size(phase_set));
 
 a1 = 1;
 a2 = 0.2;
 
 dac_step = 0.00578;
 
-k_B = 1.380649e-23;
-temperature = 290;
-resistance = 50;
-noise_bw = 800e3;
-
-thermal_noise_rms = ...
-    if_gain * sqrt(k_B * temperature * resistance * noise_bw);
-
-lo = Chirp_Gen(t, f_start, S, lo_phase);
+lo = Chirp_Gen(t, f_start, S, 0);
 
 downsample_factor = round(1 / (dt * adc_fs));
 num_adc_samples = ceil(length(t) / downsample_factor);
 
-ADC_clean = zeros(length(phase_set), num_adc_samples);
-ADC_noisy = zeros(length(phase_set), num_adc_samples);
+ADC_all = zeros(length(phase_set), num_adc_samples);
+ADC_A = zeros(length(phase_set), num_adc_samples);
+ADC_B = zeros(length(phase_set), num_adc_samples);
+ADC_B_reference = zeros(length(phase_set), num_adc_samples);
 
 for k = 1:length(phase_set)
 
-    tx_phase = phase_set(k);
+    phi_actual = phase_set(k) + phase_error(k);
 
-    rx = channel_propagation_model_DAC( ...
+    rx_A = channel_propagation_model_DAC( ...
         t, c, lambda, antenna_gain, ...
-        f_start, S, tx_phase, ...
-        target_range, target_rcs, dac_step);
+        f_start, S, phi_actual, ...
+        target_A_range, target_A_rcs, dac_step);
 
-    mixed = mixer(lo, rx);
+    rx_B = channel_propagation_model_DAC( ...
+        t, c, lambda, antenna_gain, ...
+        f_start, S, phi_actual, ...
+        target_B_range, target_B_rcs, dac_step);
 
-    if_linear = If_Amp_LowPass_Filter( ...
-        dt, mixed, if_gain);
+    rx_B_reference = channel_propagation_model_DAC( ...
+        t, c, lambda, antenna_gain, ...
+        f_start, S, phase_set(k), ...
+        target_B_range, target_B_rcs, dac_step);
 
-    if_signal = Nonlinearity( ...
-        if_linear, a1, a2);
+    mixed = mixer(lo, rx_A + rx_B);
+    if_linear = If_Amp_LowPass_Filter(dt, mixed, if_gain);
+    if_signal = Nonlinearity(if_linear, a1, a2);
 
-    ADC = downsample( ...
-        if_signal, downsample_factor);
+    ADC = downsample(if_signal, downsample_factor);
+    ADC_all(k, :) = ADC - mean(ADC);
 
-    ADC = ADC - mean(ADC);
+    mixed = mixer(lo, rx_A);
+    if_linear = If_Amp_LowPass_Filter(dt, mixed, if_gain);
+    if_signal = Nonlinearity(if_linear, a1, a2);
 
-    ADC_clean(k, :) = ADC;
+    ADC = downsample(if_signal, downsample_factor);
+    ADC_A(k, :) = ADC - mean(ADC);
 
-    noise = Thermal_Noise( ...
-        length(ADC), adc_fs, ...
-        noise_bw, thermal_noise_rms);
+    mixed = mixer(lo, rx_B);
+    if_linear = If_Amp_LowPass_Filter(dt, mixed, if_gain);
+    if_signal = Nonlinearity(if_linear, a1, a2);
 
-    ADC_noisy(k, :) = ADC + noise;
-    ADC_noisy(k, :) = ...
-        ADC_noisy(k, :) - mean(ADC_noisy(k, :));
+    ADC = downsample(if_signal, downsample_factor);
+    ADC_B(k, :) = ADC - mean(ADC);
+
+    mixed = mixer(lo, rx_B_reference);
+    if_linear = If_Amp_LowPass_Filter(dt, mixed, if_gain);
+    if_signal = Nonlinearity(if_linear, a1, a2);
+
+    ADC = downsample(if_signal, downsample_factor);
+    ADC_B_reference(k, :) = ADC - mean(ADC);
 
 end
 
 FFT_ADC( ...
-    ADC_clean, ADC_noisy, ...
-    phase_set, adc_fs, c, S);
+    ADC_all, ADC_A, ADC_B, ADC_B_reference, ...
+    phase_set, adc_fs, c, S, ...
+    target_B_range, phase_error_std_deg);
