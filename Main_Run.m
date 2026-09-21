@@ -29,7 +29,9 @@ t = 0:dt:(t_chirp - dt);
 
 lo_phase = 0;
 
-phase_set = [0, pi/2, pi, 3*pi/2];
+% 16 equally spaced phase states
+num_phase_states = 16;
+phase_set = 2*pi*(0:num_phase_states-1) / num_phase_states;
 
 a1 = 1;
 a2 = 0.2;
@@ -43,21 +45,25 @@ num_adc_samples = ceil(length(t) / downsample_factor);
 
 ADC_all = zeros(length(phase_set), num_adc_samples);
 ADC_B_only = zeros(length(phase_set), num_adc_samples);
+ADC_B_ideal = zeros(length(phase_set), num_adc_samples);
 
 for k = 1:length(phase_set)
 
     tx_phase = phase_set(k);
 
+    % Quantized DAC: A
     rx_A = channel_propagation_model_DAC( ...
         t, c, lambda, antenna_gain, ...
         f_start, S, tx_phase, ...
         target_A_range, target_A_rcs, dac_step);
 
+    % Quantized DAC: B
     rx_B = channel_propagation_model_DAC( ...
         t, c, lambda, antenna_gain, ...
         f_start, S, tx_phase, ...
         target_B_range, target_B_rcs, dac_step);
 
+    % A + B
     rx = rx_A + rx_B;
 
     mixed = mixer(lo, rx);
@@ -68,11 +74,14 @@ for k = 1:length(phase_set)
     if_signal = Nonlinearity( ...
         if_linear, a1, a2);
 
-    ADC = downsample(if_signal, downsample_factor);
+    ADC = downsample( ...
+        if_signal, downsample_factor);
+
     ADC = ADC - mean(ADC);
 
     ADC_all(k, :) = ADC;
 
+    % B only, quantized DAC
     mixed_B = mixer(lo, rx_B);
 
     if_linear_B = If_Amp_LowPass_Filter( ...
@@ -88,8 +97,29 @@ for k = 1:length(phase_set)
 
     ADC_B_only(k, :) = ADC_B;
 
+    % B only, ideal DAC
+    rx_B_ideal = channel_propagation_model_DAC( ...
+        t, c, lambda, antenna_gain, ...
+        f_start, S, tx_phase, ...
+        target_B_range, target_B_rcs, 0);
+
+    mixed_B_ideal = mixer(lo, rx_B_ideal);
+
+    if_linear_B_ideal = If_Amp_LowPass_Filter( ...
+        dt, mixed_B_ideal, if_gain);
+
+    if_signal_B_ideal = Nonlinearity( ...
+        if_linear_B_ideal, a1, a2);
+
+    ADC_B_id = downsample( ...
+        if_signal_B_ideal, downsample_factor);
+
+    ADC_B_id = ADC_B_id - mean(ADC_B_id);
+
+    ADC_B_ideal(k, :) = ADC_B_id;
+
 end
 
 FFT_ADC( ...
-    ADC_all, ADC_B_only, phase_set, ...
-    adc_fs, c, S);
+    ADC_all, ADC_B_only, ADC_B_ideal, ...
+    phase_set, adc_fs, c, S);
