@@ -1,91 +1,91 @@
 function FFT_ADC(ADC_all, ADC_B_only, phase_set, adc_fs, c, S)
 
-    num_phases = size(ADC_all, 1);
-    N = size(ADC_all, 2);
+num_phases = size(ADC_all, 1);
+N = size(ADC_all, 2);
 
-    w = hann(N).';
-    w = w / mean(w);
+w = hann(N).';
+w = w / mean(w);
 
-    Y_all = zeros(num_phases, N);
-    Y_B = zeros(num_phases, N);
+Y_all = zeros(num_phases, N);
+Y_B = zeros(num_phases, N);
 
-    for k = 1:num_phases
+for k = 1:num_phases
 
-        Y_all(k, :) = ...
-            fft(ADC_all(k, :) .* w);
+    Y_all(k, :) = ...
+        fft(ADC_all(k, :) .* w);
 
-        Y_B(k, :) = ...
-            fft(ADC_B_only(k, :) .* w);
+    Y_B(k, :) = ...
+        fft(ADC_B_only(k, :) .* w);
 
-    end
-    
-    % before demodulation
-    Y_before = Y_all(1, :);
-    
-    % after demodulation
-    Y_after = zeros(1, N);
+end
 
-    % b reference
-    Y_B_after = zeros(1, N);
+% before demodulation
+Y_before = Y_all(1, :);
 
-    for k = 1:num_phases
+% after demodulation
+Y_after = zeros(1, N);
 
-        phi = phase_set(k);
+% b reference
+Y_B_after = zeros(1, N);
 
-        correction = exp(1j * phi);
+for k = 1:num_phases
 
-        Y_after = Y_after ...
-            + Y_all(k, :) * correction;
+    phi = phase_set(k);
 
-        Y_B_after = Y_B_after ...
-            + Y_B(k, :) * correction;
+    correction = exp(1j * phi);
 
-    end
+    Y_after = Y_after ...
+        + Y_all(k, :) * correction;
 
-    Y_after = Y_after / num_phases;
-    Y_B_after = Y_B_after / num_phases;
-    
-    num_positive = floor(N/2) + 1;
+    Y_B_after = Y_B_after ...
+        + Y_B(k, :) * correction;
 
-    Y_before = abs(Y_before(1:num_positive));
-    Y_after = abs(Y_after(1:num_positive));
-    Y_B_after = abs(Y_B_after(1:num_positive));
+end
 
-    f = (0:num_positive-1) * adc_fs / N;
+Y_after = Y_after / num_phases;
+Y_B_after = Y_B_after / num_phases;
 
-    range_axis = c * f / (2*S);
-    
-    figure;
+num_positive = floor(N/2) + 1;
 
-    plot( ...
-        range_axis(2:end), ...
-        20*log10(Y_before(2:end) + eps), ...
-        'LineWidth', 1.5);
+Y_before = abs(Y_before(1:num_positive));
+Y_after = abs(Y_after(1:num_positive));
+Y_B_after = abs(Y_B_after(1:num_positive));
 
-    hold on;
+f = (0:num_positive-1) * adc_fs / N;
 
-    plot( ...
-        range_axis(2:end), ...
-        20*log10(Y_after(2:end) + eps), ...
-        'LineWidth', 1.5);
+range_axis = c * f / (2*S);
 
-    plot( ...
-        range_axis(2:end), ...
-        20*log10(Y_B_after(2:end) + eps), ...
-        '--', ...
-        'LineWidth', 1.5);
+figure;
 
-    xlabel("Apparent Range (m)");
-    ylabel("Magnitude (dB)");
+plot( ...
+    range_axis(2:end), ...
+    20*log10(Y_before(2:end) + eps), ...
+    'LineWidth', 1.5);
 
-    legend( ...
-        "A + B before cancellation", ...
-        "A + B after cancellation", ...
-        "B-only reference");
+hold on;
 
-    title("Recovery of Real Target Beneath H2");
+plot( ...
+    range_axis(2:end), ...
+    20*log10(Y_after(2:end) + eps), ...
+    'LineWidth', 1.5);
 
-    grid on;
-    xlim([0 2]);
+plot( ...
+    range_axis(2:end), ...
+    20*log10(Y_B_after(2:end) + eps), ...
+    '--', ...
+    'LineWidth', 1.5);
+
+xlabel("Apparent Range (m)");
+ylabel("Magnitude (dB)");
+
+legend( ...
+    "A + B before cancellation", ...
+    "A + B after cancellation", ...
+    "B-only reference");
+
+title("Recovery of Real Target Beneath H2");
+
+grid on;
+xlim([0 2]);
 
 end

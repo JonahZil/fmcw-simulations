@@ -1,4 +1,4 @@
-clear; 
+clear;
 clc;
 
 c = 299792458;
@@ -29,11 +29,12 @@ t = 0:dt:(t_chirp - dt);
 
 lo_phase = 0;
 
-% phase states
 phase_set = [0, pi/2, pi, 3*pi/2];
 
 a1 = 1;
 a2 = 0.2;
+
+dac_step = 0.00578;
 
 lo = Chirp_Gen(t, f_start, S, lo_phase);
 
@@ -46,20 +47,17 @@ ADC_B_only = zeros(length(phase_set), num_adc_samples);
 for k = 1:length(phase_set)
 
     tx_phase = phase_set(k);
-    
-    % a
-    rx_A = channel_propagation_model( ...
-        t, c, lambda, antenna_gain, ...
-        f_start, S, tx_phase, ...
-        target_A_range, target_A_rcs);
-    
-    % b
-    rx_B = channel_propagation_model( ...
-        t, c, lambda, antenna_gain, ...
-        f_start, S, tx_phase, ...
-        target_B_range, target_B_rcs);
 
-    % a + b
+    rx_A = channel_propagation_model_DAC( ...
+        t, c, lambda, antenna_gain, ...
+        f_start, S, tx_phase, ...
+        target_A_range, target_A_rcs, dac_step);
+
+    rx_B = channel_propagation_model_DAC( ...
+        t, c, lambda, antenna_gain, ...
+        f_start, S, tx_phase, ...
+        target_B_range, target_B_rcs, dac_step);
+
     rx = rx_A + rx_B;
 
     mixed = mixer(lo, rx);
@@ -75,7 +73,6 @@ for k = 1:length(phase_set)
 
     ADC_all(k, :) = ADC;
 
-    % b only
     mixed_B = mixer(lo, rx_B);
 
     if_linear_B = If_Amp_LowPass_Filter( ...

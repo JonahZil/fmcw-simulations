@@ -1,6 +1,6 @@
-function rx = channel_propagation_model( ...
+function rx = channel_propagation_model_DAC( ...
     t, c, lambda, antenna_gain, ...
-    f_start, S, phase_start, range, rcs)
+    f_start, S, phase_start, range, rcs, dac_step)
 
     delay = 2*range/c;
 
@@ -13,7 +13,11 @@ function rx = channel_propagation_model( ...
     valid = t >= delay;
     delayed_t = t(valid) - delay;
 
-    rx(valid) = amplitude * ...
-        Chirp_Gen(delayed_t, f_start, S, phase_start);
+    tx = Chirp_Gen( ...
+        delayed_t, f_start, S, phase_start);
+
+    tx = DAC_Model(tx, dac_step);
+
+    rx(valid) = amplitude * tx;
 
 end
