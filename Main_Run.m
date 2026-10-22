@@ -1,3 +1,4 @@
+
 clear; 
 clc;
 
@@ -21,7 +22,7 @@ target_A_range = 0.6;
 target_A_rcs = 1;
 
 target_B_range = 2 * target_A_range;
-target_B_rcs = 0.01;
+target_B_rcs = 0.001;
 
 lambda = c / ((f_start + f_stop) / 2);
 
@@ -42,6 +43,8 @@ num_adc_samples = ceil(length(t) / downsample_factor);
 
 ADC_all = zeros(length(phase_set), num_adc_samples);
 ADC_B_only = zeros(length(phase_set), num_adc_samples);
+ADC_linear_all = zeros(length(phase_set), num_adc_samples);
+ADC_linear_B = zeros(length(phase_set), num_adc_samples);
 
 for k = 1:length(phase_set)
 
@@ -75,6 +78,10 @@ for k = 1:length(phase_set)
 
     ADC_all(k, :) = ADC;
 
+    % Linear (a2 = 0) reference for A + B
+    ADC_ref = downsample(a1 * if_linear, downsample_factor);
+    ADC_linear_all(k, :) = ADC_ref - mean(ADC_ref);
+
     % b only
     mixed_B = mixer(lo, rx_B);
 
@@ -91,8 +98,13 @@ for k = 1:length(phase_set)
 
     ADC_B_only(k, :) = ADC_B;
 
+    % Linear (a2 = 0) reference for target B
+    ADC_B_ref = downsample(a1 * if_linear_B, downsample_factor);
+    ADC_linear_B(k, :) = ADC_B_ref - mean(ADC_B_ref);
+
 end
 
 FFT_ADC( ...
     ADC_all, ADC_B_only, phase_set, ...
-    adc_fs, c, S);
+    adc_fs, c, S, ADC_linear_all, ADC_linear_B, ...
+    target_A_range, target_B_range);
