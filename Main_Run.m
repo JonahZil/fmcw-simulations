@@ -76,4 +76,4 @@ for k = 1:length(phase_set)
 end
 
 % Plot spectrum before and after phase cycling
-FFT_ADC(ADC_all, phase_set, adc_fs, c, S);
+FFT_ADC(ADC_all, phase_set, adc_fs, c, S, target_range);

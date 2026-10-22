@@ -1,5 +1,4 @@
-function FFT_ADC(ADC_all, phase_set, adc_fs, c, S)
-
+function FFT_ADC(ADC_all, phase_set, adc_fs, c, S, target_range)
     num_phases = size(ADC_all, 1);
     N = size(ADC_all, 2);
 
@@ -62,6 +61,84 @@ function FFT_ADC(ADC_all, phase_set, adc_fs, c, S)
     f = (0:num_positive-1) * adc_fs / N;
 
     range_axis = c * f / (2*S);
+    
+    % ========================================================
+    % Positive frequencies
+    % ========================================================
+
+    num_positive = floor(N/2) + 1;
+
+    % Preserve complex FFT values for metric calculations
+    Y_before = Y_before(1:num_positive);
+    Y_after = Y_after(1:num_positive);
+
+    f = (0:num_positive-1) * adc_fs / N;
+    range_axis = c * f / (2*S);
+
+    % ========================================================
+    % Quantitative performance metrics
+    % ========================================================
+
+    % Fundamental and second-harmonic apparent ranges
+    R_H1 = target_range;
+    R_H2 = 2 * target_range;
+
+    % Find nearest FFT bins
+    [~, idx_H1] = min(abs(range_axis - R_H1));
+    [~, idx_H2] = min(abs(range_axis - R_H2));
+
+    % Complex FFT coefficients
+    H1_before = Y_before(idx_H1);
+    H1_after = Y_after(idx_H1);
+
+    H2_before = Y_before(idx_H2);
+    H2_after = Y_after(idx_H2);
+
+    % 1. Harmonic suppression
+    H2_suppression_db = 20*log10( ...
+        (abs(H2_before) + eps) / ...
+        (abs(H2_after) + eps));
+
+    % 2. Fundamental amplitude retention
+    H1_retention_db = 20*log10( ...
+        (abs(H1_after) + eps) / ...
+        (abs(H1_before) + eps));
+
+    % 3. Harmonic relative to fundamental
+    H2_relative_before_db = 20*log10( ...
+        (abs(H2_before) + eps) / ...
+        (abs(H1_before) + eps));
+
+    H2_relative_after_db = 20*log10( ...
+        (abs(H2_after) + eps) / ...
+        (abs(H1_after) + eps));
+
+    % 4. Fundamental phase error
+    H1_phase_error_deg = rad2deg( ...
+        angle(H1_after * conj(H1_before)));
+
+    % ========================================================
+    % Print results
+    % ========================================================
+
+    fprintf('\n');
+    fprintf('PHASE-DIVERSITY PERFORMANCE\n');
+    fprintf('---------------------------\n');
+
+    fprintf('H1 range bin:          %.4f m\n', range_axis(idx_H1));
+    fprintf('H2 range bin:          %.4f m\n', range_axis(idx_H2));
+
+    fprintf('H2 suppression:        %.2f dB\n', H2_suppression_db);
+    fprintf('H1 amplitude change:   %.4f dB\n', H1_retention_db);
+
+    fprintf('H2/H1 before:          %.2f dBc\n', H2_relative_before_db);
+    fprintf('H2/H1 after:           %.2f dBc\n', H2_relative_after_db);
+
+    fprintf('H1 phase error:        %.4f degrees\n', H1_phase_error_deg);
+
+    % Convert to magnitude for plotting
+    Y_before = abs(Y_before);
+    Y_after = abs(Y_after);
 
     % ========================================================
     % Plot
