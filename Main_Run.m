@@ -45,6 +45,7 @@ num_adc_samples = ceil(length(t) / downsample_factor);
 
 % Store one ADC capture for each phase
 ADC_all = zeros(length(phase_set), num_adc_samples);
+ADC_ref = zeros(length(phase_set), num_adc_samples);
 
 for k = 1:length(phase_set)
 
@@ -64,16 +65,25 @@ for k = 1:length(phase_set)
     % IF amplifier + low-pass filter
     if_linear = If_Amp_LowPass_Filter(dt, mixed, if_gain);
 
-    % Nonlinearity
-    if_signal = Nonlinearity(if_linear, a1, a2);
-
-    % ADC
-    ADC = downsample(if_signal, downsample_factor);
-    ADC = ADC - mean(ADC);
-
-    ADC_all(k, :) = ADC;
+    % Nonlinear signal
+    if_nonlinear = Nonlinearity(if_linear, a1, a2);
+    
+    % Linear reference (a2 = 0)
+    if_reference = Nonlinearity(if_linear, a1, 0);
+    
+    % ADC sampling
+    ADC_nonlinear = downsample(if_nonlinear, downsample_factor);
+    ADC_reference = downsample(if_reference, downsample_factor);
+    
+    % DC removal
+    ADC_nonlinear = ADC_nonlinear - mean(ADC_nonlinear);
+    ADC_reference = ADC_reference - mean(ADC_reference);
+    
+    % Store both signals
+    ADC_all(k, :) = ADC_nonlinear;
+    ADC_ref(k, :) = ADC_reference;
 
 end
 
 % Plot spectrum before and after phase cycling
-FFT_ADC(ADC_all, phase_set, adc_fs, c, S, target_range);
+FFT_ADC(ADC_all, ADC_ref, phase_set, adc_fs, c, S, target_range);
