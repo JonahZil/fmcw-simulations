@@ -1,71 +1,80 @@
-
 clear; clc; close all;
 
 % Parameters
 B = 12;
 K = 8;
-N = 2^16;
 A = 0.9;
+Fs = 100e6;
+Tc = 100e-6;
+f0 = 1e6;
+f1 = 2e6;
 
-theta = 2*pi*(0:N-1)'/N;
+t = (0:round(Fs*Tc)-1)'/Fs;
+N = length(t);
+S = (f1-f0)/Tc;
 phi = 2*pi*(0:K-1)/K;
 step = 2/2^B;
 
-% Generate quantization errors
+% FMCW chirp phase
+psi = 2*pi*(f0*t + 0.5*S*t.^2);
+
+% Generate DAC quantization errors
 q = zeros(N,K);
 
 for k = 1:K
-    x = A*sin(theta + phi(k));
+    x = A*sin(psi + phi(k));
     xq = step*round(x/step);
-    q(:,k) = xq - x;
+    q(:,k) = xq-x;
 end
 
-% Fourier coefficients of the quantization error
-Q = fft(q)/N;
+% Phase compensation and coherent averaging
+qAvg = real(mean(hilbert(q).*exp(-1j*phi),2));
 
-% Phase compensation and averaging
-Qavg = mean(Q .* exp(-1j*phi), 2);
+% Metrics
+rms1 = sqrt(mean(q(:,1).^2));
+rmsK = sqrt(mean(qAvg.^2));
 
-% Plot harmonic amplitudes
-m = 1:2:19;
+suppression = 20*log10(rms1/rmsK);
 
-before = 20*log10(2*abs(Q(m+1,1))/A);
-after = 20*log10(2*abs(Qavg(m+1))/A);
+sqnr1 = 20*log10((A/sqrt(2))/rms1);
+sqnrK = 20*log10((A/sqrt(2))/rmsK);
 
-plot(m,before,'o-',m,after,'x-');
-grid on;
-xlabel('Harmonic order');
-ylabel('Quantization error (dBc)');
-legend('Single phase','Phase diversity');
-xticks(m);
+fprintf('RMS error (1 phase): %.4f LSB\n',rms1/step);
+fprintf('RMS error (8 phases): %.4f LSB\n',rmsK/step);
+fprintf('Error reduction: %.2f dB\n',suppression);
+fprintf('SQNR: %.2f -> %.2f dB\n',sqnr1,sqnrK);
 
-% Reconstruct the averaged time-domain error
-Qreal = zeros(N,1);
-Qreal(2:N/2) = Qavg(2:N/2);
-Qreal(N/2+2:end) = conj(flipud(Qreal(2:N/2)));
+% Quantization error FFT
+f = (0:N/2)'*Fs/N;
 
-q4 = real(ifft(Qreal*N));
+E1 = fft(q(:,1));
+EK = fft(qAvg);
 
-% Compare DAC outputs
-x1 = A*sin(theta) + q(:,1);
-x4 = A*sin(theta) + q4;
+dB1 = 20*log10(max(2*abs(E1(1:N/2+1))/(N*A),1e-15));
+dBK = 20*log10(max(2*abs(EK(1:N/2+1))/(N*A),1e-15));
 
+% Figure
+figure('Color','w','Position',[100 100 1100 420]);
+title('Quantization Error before and After Phase-Diversity')
 
-% Plot quantization error
-figure('Color','w','Position',[100 100 900 400]);
-
-idx = 1:80;
-
-plot(theta(idx),q(idx,1)/step,'-o', ...
-    'LineWidth',1.5,'MarkerSize',3);
+idx = t >= 25e-6 & t <= 25.4e-6;
+plot(t(idx)*1e6,q(idx,1)/step,'o-','LineWidth',1.4);
 hold on;
-
-plot(theta(idx),q4(idx)/step,'-s', ...
-    'LineWidth',1.5,'MarkerSize',3);
-
+plot(t(idx)*1e6,qAvg(idx)/step,'s-','LineWidth',1.4);
 grid on;
-xlabel('Phase (rad)');
+xlabel('Time (us)');
 ylabel('Quantization error (LSB)');
-title('Quantization error');
-legend('One phase','8 phases');
-ylim([-0.6 0.6]);
+legend('Single phase','8 phases');
+
+figure;
+
+plot(f/1e6,dB1,'LineWidth',1);
+title('FFT of Quantization Error Before and After Phase-Diversity')
+hold on;
+plot(f/1e6,dBK,'LineWidth',1);
+grid on;
+xlim([0 12]);
+xlabel('Frequency (MHz)');
+ylabel('Magnitude (dB relative to A/bin)');
+legend('Single phase','8 phases');
+
